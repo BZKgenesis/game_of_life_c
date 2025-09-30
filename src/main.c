@@ -10,7 +10,7 @@
 #define WINDOW_WIDTH 1000
 #define WINDOW_HEIGHT 1000
 
-#define GAME_SIZE 200
+#define GAME_SIZE 500
 
 #define CELL_ALIVE 1
 #define CELL_DEAD 0
@@ -24,6 +24,7 @@ struct Game {
     SDL_Renderer *renderer;
     GameTab *game_tab_current;
     GameTab *game_tab_next;
+    SDL_Texture *tex;
 };
 
 bool game_init_sdl(struct Game *g);
@@ -86,10 +87,15 @@ bool game_init_sdl(struct Game *g) {
         return false;
     }
 
+
+    g->tex = SDL_CreateTexture(g->renderer, SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,GAME_SIZE,GAME_SIZE);
+    SDL_SetTextureScaleMode(g->tex,SDL_SCALEMODE_NEAREST);
+
     return true;
 }
 
 void game_free(struct Game *g) {
+    SDL_DestroyTexture(g->tex);
     if (g->renderer) {
         SDL_DestroyRenderer(g->renderer);
         g->renderer = NULL;
@@ -142,7 +148,6 @@ void game_run(struct Game *g) {
             }
         }
 
-        SDL_Delay(1);
         update_game(*g->game_tab_current,*g->game_tab_next);
         GameTab *tmp = g->game_tab_current; g->game_tab_current = g->game_tab_next; g->game_tab_next = tmp;
 
@@ -153,21 +158,19 @@ void game_run(struct Game *g) {
 
 
 void display_game(struct Game *g) {
-    SDL_SetRenderDrawColor(g->renderer, 0, 0, 0, 255);
-    SDL_RenderClear(g->renderer);
-    const float case_width = (float)WINDOW_WIDTH / GAME_SIZE;
-    const float case_height = (float)WINDOW_HEIGHT / GAME_SIZE;
-    for (int i = 0; i < GAME_SIZE; i++) {
-        for (int j = 0; j < GAME_SIZE; j++) {
-            SDL_FRect rect = {(float)i*case_width, (float)j*case_height, case_width, case_height};
-            if (isAlive(i,j,*g->game_tab_current)) {
-                SDL_SetRenderDrawColor(g->renderer, 255, 255, 255, 255);
-            }else {
-                SDL_SetRenderDrawColor(g->renderer, 0, 0, 0, 255);
-            }
-            SDL_RenderFillRect(g->renderer, &rect);
+    uint32_t *pixels;
+    int pitch;
+    SDL_LockTexture(g->tex, NULL, (void**)&pixels, &pitch);
+    for(int y=0; y<GAME_SIZE; ++y){
+        for(int x=0; x<GAME_SIZE; ++x){
+            const uint32_t color = isAlive(x,y,*g->game_tab_current) ? 0xFFFFFFFF : 0xFF000000;
+            pixels[y*(pitch/4) + x] = color;
         }
     }
+    SDL_UnlockTexture(g->tex);
+
+    SDL_RenderClear(g->renderer);
+    SDL_RenderTexture(g->renderer, g->tex, NULL, NULL); // NULL,NULL = plein écran
     SDL_RenderPresent(g->renderer);
 }
 
