@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
 #define SDL_FLAGS SDL_INIT_VIDEO
 
@@ -10,7 +11,9 @@
 #define WINDOW_WIDTH 1000
 #define WINDOW_HEIGHT 1000
 
-#define GAME_SIZE 500
+#define ALIVE_PERCENTAGE 0
+
+#define GAME_SIZE 50
 
 #define CELL_ALIVE 1
 #define CELL_DEAD 0
@@ -25,10 +28,18 @@ struct Game {
     GameTab *game_tab_current;
     GameTab *game_tab_next;
     SDL_Texture *tex;
+    bool is_paused;
+    bool is_drawing;
+    bool is_erasing;
 };
 
+bool isAlive(int X, int Y, const GameTab game);
+void setCase(int X, int Y, GameTab game, bool state);
+void init_game_tab(struct Game *g);
+bool game_init(struct Game *g);
 bool game_init_sdl(struct Game *g);
 void game_free(struct Game *g);
+void update_game(GameTab game_tab_current, GameTab game_tab_next);
 void game_run(struct Game *g);
 void display_game(struct Game *g);
 
@@ -47,14 +58,13 @@ void setCase(const int X, const int Y, GameTab game, bool state) {
         game[n_byte] &= ~(1 << n_bit);
 }
 
-
 void init_game_tab(struct Game *g) {
     g->game_tab_next = &a;
     g->game_tab_current = &b;
     srand((unsigned)time(0));
     for (int i = 0; i < GAME_SIZE; i++) {
         for (int j = 0; j < GAME_SIZE; j++) {
-            const short val = rand()%2;
+            const short val = ((rand()%100) > ALIVE_PERCENTAGE)? CELL_ALIVE:CELL_DEAD;
             setCase(i,j,(*g->game_tab_next),val);
             setCase(i,j,(*g->game_tab_current),val);
         }
@@ -65,6 +75,9 @@ bool game_init(struct Game *g) {
 
     const bool return_code = game_init_sdl(g);
     init_game_tab(g);
+    g->is_paused = false;
+    g->is_drawing = false;
+    g->is_erasing = false;
     return return_code;
 
 }
@@ -138,6 +151,7 @@ void game_run(struct Game *g) {
     SDL_Event event;
 
     while (running) {
+        bool one_step = false;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = 0;
@@ -145,17 +159,60 @@ void game_run(struct Game *g) {
             else if (event.type == SDL_EVENT_KEY_DOWN) {
                 if (event.key.key == SDLK_ESCAPE)// touche echap
                     running = 0;
+                if (event.key.key == SDLK_SPACE || event.key.key == SDLK_P) {
+                    g->is_paused = !g->is_paused;
+                    char str[80];
+                    strcpy(str, WINDOW_TITLE);
+                    if (g->is_paused) {
+                        strcat(str, " - Paused");
+                    }
+                    SDL_SetWindowTitle(g->window, str);
+                }
+                if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_N) {
+                    one_step = true;
+                }
+            }else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    g->is_drawing = true;
+                    const int x = (int)(event.motion.x/WINDOW_WIDTH*GAME_SIZE);
+                    const int y = (int)(event.motion.y/WINDOW_HEIGHT*GAME_SIZE);
+                    setCase(x,y,*g->game_tab_current,CELL_ALIVE);
+                }
+                if (event.button.button == SDL_BUTTON_RIGHT) {
+                    g->is_erasing = true;
+                    const int x = (int)(event.motion.x/WINDOW_WIDTH*GAME_SIZE);
+                    const int y = (int)(event.motion.y/WINDOW_HEIGHT*GAME_SIZE);
+                    setCase(x,y,*g->game_tab_current,CELL_DEAD);
+                }
+            }else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    g->is_drawing = false;
+                }
+                if (event.button.button == SDL_BUTTON_RIGHT) {
+                    g->is_erasing = false;
+                }
+            }else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                if (g->is_drawing) {
+                    const int x = (int)(event.motion.x/WINDOW_WIDTH*GAME_SIZE);
+                    const int y = (int)(event.motion.y/WINDOW_HEIGHT*GAME_SIZE);
+                    setCase(x,y,*g->game_tab_current,CELL_ALIVE);
+                }
+                if (g->is_erasing) {
+                    const int x = (int)(event.motion.x/WINDOW_WIDTH*GAME_SIZE);
+                    const int y = (int)(event.motion.y/WINDOW_HEIGHT*GAME_SIZE);
+                    setCase(x,y,*g->game_tab_current,CELL_DEAD);
+                }
             }
         }
-
-        update_game(*g->game_tab_current,*g->game_tab_next);
-        GameTab *tmp = g->game_tab_current; g->game_tab_current = g->game_tab_next; g->game_tab_next = tmp;
+        SDL_Delay(10);
+        if (!g->is_paused || one_step) {
+            update_game(*g->game_tab_current,*g->game_tab_next);
+            GameTab *tmp = g->game_tab_current; g->game_tab_current = g->game_tab_next; g->game_tab_next = tmp;
+        }
 
         display_game(g);
-
     }
 }
-
 
 void display_game(struct Game *g) {
     uint32_t *pixels;
